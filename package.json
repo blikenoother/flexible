@@ -58,6 +58,7 @@
         "traverse": "*",
         "path-to-regexp": "*",
         "pg": "*",
-        "optimist": "*"
+        "optimist": "*",
+        "buffer-crc32": "*"
     }
 }

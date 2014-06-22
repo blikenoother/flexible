@@ -55,7 +55,9 @@ module.exports = function (options) {
             if (!options.url) {next(null);}
             else {crawler.navigate(options.url, next);}
         },
-        function (next) {crawler.crawl(next);}
+        function (next) {
+            crawler.crawl(next);
+        }
     ], function (error) {
         if (error) {
             crawler.emit('error', error);
@@ -77,28 +79,27 @@ function Crawler(options) {
 
     this._middleware = [];
     this._domains = options.domains;
+    this._url = options.url;
     this._completed = false;
     this._paused = false;
-    this._max_concurrency = options
-        .max_concurrency || 4;
+    this._max_concurrency = options.max_concurrency || 4;
     this._max_crawl_queue_length = options
         .max_crawl_queue_length || 10;
     this._interval = options.interval || 250;
     this._encoding = options.encoding;
     this._proxy = options.proxy;
     this._headers = options.headers || {
-        'user-agent': 'Mozilla/5.0 (compatible; ' + 
-            'Node.js/Flexible 0.1.20; https://' +
-            'github.com/eckardto/flexible)',
+        'user-agent': 'Node/Flexible 0.1.12 ' +
+            '(https://github.com/eckardto/flexible)'
     };
     this._timeout = options.timeout;
-    this._follow_redirect = options
-        .follow_redirect || true;
-    this._max_redirects = options
-        .max_redirects || 10;
+    this._follow_redirect = options.follow_redirect || true;
+    this._max_redirects = options.max_redirects || 10;
     this._auth = options.auth;
     this._pool = options.pool;
     this._jar = options.jar;
+    this._other_domain = options.other_domain || false;
+    this._explude_regexp = options.explude_regexp || null;
 
     var self = this;
     this._crawl_queue = async
@@ -140,21 +141,21 @@ Crawler.prototype.use = function (component) {
 /**
  * Navigate to a location.
  */
-Crawler.prototype.navigate = function (loc, callback) {
-    var parsed_loc = url.parse(loc);
+Crawler.prototype.navigate = function (location, callback) {
+    var parsed_location = url.parse(location);
 
-    if (!parsed_loc.protocol) {
-        loc = 'http://' + loc;
+    if (!parsed_location.protocol) {
+        location = 'http://' + location;
     }
 
     if (this._domains && this._domains[0] &&
-        this._domains.indexOf(parsed_loc.hostname) === -1) {
+        this._domains.indexOf(parsed_location.hostname) === -1) {
         if (callback) {
             callback(new Error('Location is not allowed.'));
         }
     } else {
         // Add to the queue.
-        this.queue.add(loc, function (error) {
+        this.queue.add(location, function (error) {
             if (callback) {callback(error);}
         });
     }
@@ -170,9 +171,8 @@ Crawler.prototype._process = function (doc, callback) {
         // Download, while parsing, the doc.
         function (next) {
             var req = request({
-                url: doc.url, 
-                encoding: self._encoding ?
-                    null : undefined,
+                url: doc.url,
+                encoding: self._encoding ? null : undefined,
                 headers: self._headers,
                 proxy: self._proxy,
                 timeout: self._timeout,
@@ -187,8 +187,7 @@ Crawler.prototype._process = function (doc, callback) {
                     return next(new Error('Missing the content-type.'));
                 }
 
-                if (res.headers['content-type']
-                    .indexOf('html') === -1) {
+                if (res.headers['content-type'].indexOf('html') === -1) {
                     res.request.end();
                     return next(new Error('Unsupported content-type.'));
                 }
@@ -203,7 +202,7 @@ Crawler.prototype._process = function (doc, callback) {
 
                         next(null, req.toJSON(), res.toJSON(), body, dom);
                     }), parser = new htmlparser.Parser(handler);
-                
+
                 var body = '';
                 res.on('data', function (chunk) {
                     if (self._encoding) {
@@ -220,26 +219,61 @@ Crawler.prototype._process = function (doc, callback) {
         },
         // Discover, and navigate to, locations.
         function (req, res, body, dom, next) {
-            var locs = [];
+            var locations = [];
             traverse(dom).forEach(function (node) {
-                if (node.attribs && node.attribs.href) {
-                    var new_loc = url.resolve(doc.url, node.attribs.href);
-                    if (url.parse(new_loc).protocol == 'http:') {
-                        locs.push(new_loc);
+                if (!node.attribs || !node.attribs.href) {return;}
+
+                var href = node.attribs.href;
+                var protocol = url.parse(href).protocol;
+                var hostname = url.parse(href).hostname;
+                
+                if (href === '/') {href = res.request.uri.hostname;}
+                else if (!protocol) {
+                    if (href.substring(0, 2) === '//') {
+                        href = 'http:' + href;
+                    } else if (href.charAt(0) === '/') {
+                        href = res.request.uri.protocol + '//' + 
+                            res.request.uri.hostname + href;
+                    } else {
+                        href = res.request.uri.protocol + '//' + 
+                            res.request.uri.hostname + '/' + href;
                     }
+                } else if (protocol.indexOf('http') === -1) {
+                    // Only crawl locations using HTTP.
+                    return;
                 }
+
+                var start = href
+                    .substring(0, href.indexOf('.') + 1);
+                href = start + href.replace(start, '')
+                    .replace('//', '/');
+                
+                if (href.charAt(href.length - 1) === '/') {
+                    href = href.substring(0, href.length - 1);
+                }
+
+                if (hostname == null || (self._other_domain == false &&
+                    self._url.replace('www.', '') != hostname.replace('www.', ''))) {
+                    // Crawl mentioned domain only
+                    return;
+                }
+
+                if (self._explude_regexp && href.search(self._explude_regexp) > -1) {
+                    // Apply regex to filter url
+                    return;
+                }
+
+                locations.push(href);
             });
 
-            async.forEach(locs, function (loc, callback) {
-                self.navigate(loc, function (error) {
-                    if (error) {self.emit('error', error);} 
-                    else {self.emit('navigated', loc);}
+            async.forEach(locations, function (location, callback) {
+                self.navigate(location, function (error) {
+                    if (error) {self.emit('error', error);}
+                    else {self.emit('navigated', location);}
                     
                     callback(null);
                 });
-            }, function () {
-                next(null, req, res, body, dom);
-            });
+            }, function () {next(null, req, res, body, dom);});
         }
     ], function (error, req, res, body, dom) {
         doc.request = req;

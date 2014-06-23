@@ -99,7 +99,7 @@ function Crawler(options) {
     this._pool = options.pool;
     this._jar = options.jar;
     this._other_domain = options.other_domain || false;
-    this._explude_regexp = options.explude_regexp || null;
+    this._exclude_regexp = options.exclude_regexp || null;
 
     var self = this;
     this._crawl_queue = async
@@ -258,7 +258,7 @@ Crawler.prototype._process = function (doc, callback) {
                     return;
                 }
 
-                if (self._explude_regexp && href.search(self._explude_regexp) > -1) {
+                if (self._exclude_regexp && href.search(self._exclude_regexp) > -1) {
                     // Apply regex to filter url
                     return;
                 }

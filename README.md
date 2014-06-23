@@ -78,7 +78,7 @@ Options:
   --pg-get-interval             PostgreSQL queue get request interval.                     
   --pg-max-get-attempts         PostgresSQL queue max get attempts.
   --other_domain                Crawl other domain's                                         [boolean]  [default: false]
-  --explude_regexp              Exclude url which if url matches to RegExp object [For example, dont crawl image, js and css: RegExp(/(.png|.jpeg|.jpg|.ico|.css|.js)/)]    [RegExp object]
+  --exclude_regexp              Exclude url which if url matches to RegExp object [For example, dont crawl image, js and css: RegExp(/(.png|.jpeg|.jpg|.ico|.css|.js)/)]    [RegExp object]
   --
 ```
 
